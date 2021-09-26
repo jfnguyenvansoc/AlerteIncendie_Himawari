@@ -11,6 +11,7 @@ __status__ = "Developpement"
 import os, datetime, calendar, json, arcpy, ftplib, smtplib, sys, subprocess
 from email.MIMEMultipart import MIMEMultipart
 from email.MIMEText import MIMEText
+arcpy.env.parallelProcessingFactor = "80%"
 
 nomscript = sys.argv[0].replace("\\","/")
 nomscript = nomscript.split("/")
@@ -138,7 +139,7 @@ try:
         def HimawariEmailTableCSV(CSVFile, ListeCodeVerif, TableDesCSV, ChampsDesCSV, idr):
             CSVFileOrig = CSVFile.replace("_corrige","")
             if len(ListeCodeVerif) == 0:
-                PrintEtLog("Code 0: Aucune donnee pour la NC sur " + CSVFileOrig)
+                #PrintEtLog("Code 0: Aucune donnee pour la NC sur " + CSVFileOrig)
                 iCursCSV = arcpy.da.InsertCursor(TableDesCSV, ChampsDesCSV)
                 rowCSV = [CSVFileOrig, 0, idr]
                 iCursCSV.insertRow(rowCSV)
@@ -194,19 +195,19 @@ try:
                 iCursCSV.insertRow(rowCSV)
                 del iCursCSV
             elif 0 in ListeCodeVerif:
-                print("Code 0: Aucune donnee pour la NC sur " + CSVFile)
+                #print("Code 0: Aucune donnee pour la NC sur " + CSVFile)
                 iCursCSV = arcpy.da.InsertCursor(TableDesCSV, ChampsDesCSV)
                 rowCSV = [CSVFileOrig, 0, idr]
                 iCursCSV.insertRow(rowCSV)
                 del iCursCSV
 
             if len(ListeCodeVerif) > 0:
-                if 2 in ListeCodeVerif or 3 in ListeCodeVerif or 4 in ListeCodeVerif or 5 in ListeCodeVerif:
+                if 5 in ListeCodeVerif:
                     PrintEtLog(messagePrint)
                     #envoi email vers jf.nguyenvansoc@oeil.nc et fabien.albouy@oeil.nc
                     fromaddr = FromADDR
                     toaddr = ToADDR
-                    #toaddr2 = ToADDR2
+                    toaddr2 = ToADDR2
                     msg = MIMEMultipart()
                     msg['Subject'] = objet
                     msg.attach(MIMEText(body, 'plain'))
@@ -374,7 +375,8 @@ try:
                             Verif.append(verifline)
                     else:
                         Verif.append(verifline)
-                else:
+                #si a partir de la deuxieme ligne du fichier des lignes ne sont pas traitables
+                elif i > 1 and len(dl) < 14:
                     verifline = 1
                     Verif.append(verifline)
             # apres avoir traite les lignes du fichier on envoit un email de rapport et on remplit la table de CSV traites
@@ -383,36 +385,56 @@ try:
 
         ###############fonction du traitement au niveau des fichiers CSV#########################
         def TraitementNiv4FichierCSV(repMois, repJour, repHeure, idrepHeure, repftpdep, ConnectFTP, DB, TBCSV, ChpTBCSV, repdata, layerPol, layerPoint, ChpLayer, Etendue, contour, contourBuf, seuilH, codproj1, codproj2, transfproj, L_SDE):
-
-            ConnectFTP.sendcmd("CWD " + repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure)
-            CSVftp = list()
-            ConnectFTP.dir(CSVftp.append)
-            CSVftp = [c[c.find("H0"):] for c in CSVftp]
-            arcpy.MakeTableView_management(rep + "/" + DB + "/" + TBCSV, TBCSV)
-            for csvf in CSVftp:
-                CDB = [cdb[0] for cdb in arcpy.da.SearchCursor(TBCSV, [ChpTBCSV[0]], ChpTBCSV[2] + " = " + str(idrepHeure))]
-                if csvf not in CDB:
-                    #on cree le fichier en local dans le repertoire DATA
-                    os.chdir(repdata)
-                    csv = open(repdata + "/" + csvf, "w")
-                    ConnectFTP.retrbinary('RETR ' + csvf, csv.write)
-                    csv.close()
-                    #on corrige le CSV dans un nouveau csv _corrige.csv OBSOLETE plus besoin de transformer
-                    #corrigecsvf = FormatageCSV(repdata, csvf)
-                    ###CONTINUER ICI apres _corrige.csv
-                    RecupDonneesCSV(repdata, csvf, layerPoint, layerPol, DB, ChpLayer, Etendue, TBCSV, ChpTBCSV, contour, contourBuf, codproj1, codproj2, seuilH, idrepHeure, L_SDE, transfproj)
-                    #on supprime a la fin car temporaire
-                    os.remove(repdata + "/" + csvf)
-                    #os.remove(repdata + "/" + corrigecsvf)
-                elif csvf in CDB:
-                    PrintEtLog("Le fichier CSV " + csvf + " est deja traite.")
-            #Verification si le repertoire Heure est totalement traite
-            CSVDB50mn = [list(cd) for cd in arcpy.da.SearchCursor(TBCSV, ChpTBCSV, ChpTBCSV[2] + " = " + str(idrepHeure) + " AND " + ChpTBCSV[0] + " LIKE '%" + repHeure + "50%'")]
-            if len(CSVDB50mn) > 0:
-                VerificationHeure = 1
+            #On verifie si le repertoire est bien un repertoire car des soucis sont rencontres lorsqu'ils ne sont pas des repertoires grace a la commande MLST
+            VerifType = ConnectFTP.sendcmd("MLST " + repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure)
+            if VerifType.find("type=dir") >= 0:
+                ConnectFTP.sendcmd("CWD " + repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure)
+                CSVftp = list()
+                ConnectFTP.dir(CSVftp.append)
+                CSVftp = [c[c.find("H0"):] for c in CSVftp]
+                arcpy.MakeTableView_management(rep + "/" + DB + "/" + TBCSV, TBCSV)
+                for csvf in CSVftp:
+                    CDB = [cdb[0] for cdb in arcpy.da.SearchCursor(TBCSV, [ChpTBCSV[0]], ChpTBCSV[2] + " = " + str(idrepHeure))]
+                    if csvf not in CDB:
+                        #on cree le fichier en local dans le repertoire DATA
+                        os.chdir(repdata)
+                        csv = open(repdata + "/" + csvf, "w")
+                        ConnectFTP.retrbinary('RETR ' + csvf, csv.write)
+                        csv.close()
+                        #on corrige le CSV dans un nouveau csv _corrige.csv OBSOLETE plus besoin de transformer
+                        #corrigecsvf = FormatageCSV(repdata, csvf)
+                        ###CONTINUER ICI apres _corrige.csv
+                        RecupDonneesCSV(repdata, csvf, layerPoint, layerPol, DB, ChpLayer, Etendue, TBCSV, ChpTBCSV, contour, contourBuf, codproj1, codproj2, seuilH, idrepHeure, L_SDE, transfproj)
+                        #on supprime a la fin car temporaire
+                        os.remove(repdata + "/" + csvf)
+                        #os.remove(repdata + "/" + corrigecsvf)
+                    elif csvf in CDB:
+                        PrintEtLog("Le fichier CSV " + csvf + " est deja traite.")
+                #Verification si le repertoire Heure est totalement traite
+                CSVDB50mn = [list(cd) for cd in arcpy.da.SearchCursor(TBCSV, ChpTBCSV, ChpTBCSV[2] + " = " + str(idrepHeure) + " AND " + ChpTBCSV[0] + " LIKE '%" + repHeure + "50%'")]
+                if len(CSVDB50mn) > 0:
+                    VerificationHeure = 1
+                else:
+                    VerificationHeure = 0
+                arcpy.Delete_management(TBCSV)
             else:
-                VerificationHeure = 0
-            arcpy.Delete_management(TBCSV)
+                objet = conf["SubjectMailAvert"]
+                VerificationHeure = 2
+                #envoi email vers jf.nguyenvansoc@oeil.nc et fabien.albouy@oeil.nc en avertissement
+                fromaddr = FromADDR
+                toaddr = ToADDR
+                    #toaddr2 = ToADDR2
+                msg = MIMEMultipart()
+                msg['Subject'] = objet
+                body = "Le lien suivant "repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure + " n'est pas un repertoire. Veuillez faire remonter cette information a Z-PTREE@ml.jaxa.jp"
+                msg.attach(MIMEText(body, 'plain'))
+                server = smtplib.SMTP(SMTP, SMTPPort)
+                server.starttls()
+                server.login(CompteEmail, MDPEmail)
+                text = msg.as_string()
+                server.sendmail(fromaddr, toaddr, text)
+                #server.sendmail(fromaddr, toaddr2, text)
+                server.quit()
             return VerificationHeure
 
         ###############fonction du traitement au niveau des repertoires Heures#########################
@@ -428,8 +450,6 @@ try:
                 nbh = len([hd[0] for hd in arcpy.da.SearchCursor(TBHeure,[ChpTBHeure[0]])])
                 #cas si nouveau repertoire niveau heure
                 ###EXCEPTION A GERER
-        ##                if hrep == "17" and repJour == "27" and repMois == "202010":
-        ##                    PrintEtLog("repertoire non traitable 202010/27/17")
                 if hrep not in HDB:
                     iCurs = arcpy.da.InsertCursor(TBHeure, ChpTBHeure)
                     NewHDB = [hrep, nbh, idrepJour, 0]
@@ -444,6 +464,11 @@ try:
                             uCurs.updateRow(u)
                         del uCurs
                         PrintEtLog("repertoire Heure " + hrep + " est passe en statut totalement traite" + " " + datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                    #ici code 2 ce n'est pas un repertoire on met le code 2
+                    elif VerifHeure == 2:
+                        for u in uCurs:
+                            u[3] = 2
+                            uCurs.updateRow(u)
                     else:
                         for u in uCurs:
                             u[3] = 0
@@ -453,7 +478,7 @@ try:
                     HDBFiltre = [hdbf for hdbf in HeuresDB if hdbf[0] == hrep]
                     HDBFiltre = HDBFiltre[0]
                     #si deja traite
-                    if HDBFiltre[3] == 1:
+                    if HDBFiltre[3] == 1 or HDBFiltre[3]  == 2:
                         PrintEtLog("Le repertoire de l'heure " + hrep + " est deja traite entierement")
                     #sinon on traite
                     else:
@@ -463,6 +488,12 @@ try:
                         if VerifHeure == 1:
                             for u in uCurs:
                                 u[3] = 1
+                                uCurs.updateRow(u)
+                            del uCurs
+                            PrintEtLog("repertoire Heure " + hrep + " est passe en statut totalement traite"+ " " + datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                        elif VerifHeure == 2:
+                            for u in uCurs:
+                                u[3] = 2
                                 uCurs.updateRow(u)
                             del uCurs
                             PrintEtLog("repertoire Heure " + hrep + " est passe en statut totalement traite"+ " " + datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
@@ -476,7 +507,7 @@ try:
             arcpy.Delete_management(TBHeure)
             if len(Heure23DB) > 0:
                 Heure23DB = Heure23DB[0]
-                if Heure23DB[3] == 1:
+                if Heure23DB[3] == 1 or Heure23DB[3] == 2:
                     VerificationJour = 1
                 else:
                     VerificationJour = 0
