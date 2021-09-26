@@ -279,7 +279,11 @@ try:
                         if verifline == 3:
                             #if lon > minlon and lon < maxlon and lat > minlat and lat < maxlat:
                                 #Verif = 1
-                            y = int(dl[1])
+                            #regle pour gerer les erreurs sur le champ annee inferieur a 2015 on recupere l'annee sur le nom du fichier
+                            if int(dl[1]) < 2015:
+                                y = int(CSVFile[4:8])
+                            else:
+                                y = int(dl[1])
                             m = int(dl[2])
                             d = int(dl[3])
                             H = int(dl[4][0:2])
