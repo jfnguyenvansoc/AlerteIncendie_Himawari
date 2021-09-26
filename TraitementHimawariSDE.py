@@ -426,7 +426,7 @@ try:
                     #toaddr2 = ToADDR2
                 msg = MIMEMultipart()
                 msg['Subject'] = objet
-                body = "Le lien suivant "repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure + " n'est pas un repertoire. Veuillez faire remonter cette information a Z-PTREE@ml.jaxa.jp"
+                body = "Le lien suivant " + repftpdep + "/" + repMois + "/" + repJour + "/" + repHeure + " n'est pas un repertoire. Veuillez faire remonter cette information a Z-PTREE@ml.jaxa.jp"
                 msg.attach(MIMEText(body, 'plain'))
                 server = smtplib.SMTP(SMTP, SMTPPort)
                 server.starttls()
